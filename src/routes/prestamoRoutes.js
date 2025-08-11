@@ -5,7 +5,8 @@ import {
   historialCobrosCliente,
   getPrestamosByCliente,
   actualizarPrestamo,
-  eliminarPrestamo, // <-- importa el controlador eliminarPrestamo
+  eliminarPrestamo,
+  abonarPrestamo // <-- nuevo controlador para abonos
 } from "../controllers/prestamoController.js";
 import { verificarToken } from "../middleware/authMiddleware.js";
 
@@ -16,6 +17,9 @@ router.get("/cobros-hoy", verificarToken, listarCobrosHoy);
 router.get("/historial/:clienteId", verificarToken, historialCobrosCliente);
 router.get("/cliente/:clienteId", verificarToken, getPrestamosByCliente);
 router.put("/:id", verificarToken, actualizarPrestamo);
-router.delete("/:id", verificarToken, eliminarPrestamo); // <-- ¡agrega esta línea!
+router.delete("/:id", verificarToken, eliminarPrestamo);
+
+// Nuevo endpoint para registrar un abono
+router.post("/:id/abonar", verificarToken, abonarPrestamo);
 
 export default router;
