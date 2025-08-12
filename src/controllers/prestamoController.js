@@ -21,6 +21,10 @@ export const crearPrestamo = async (req, res) => {
     if (!fechaInicio) return res.status(400).json({ msg: "Fecha de inicio requerida" });
     if (!dias || dias <= 0) return res.status(400).json({ msg: "Días inválidos" });
 
+    // Calcular interés diario y pago diario fijo
+    const interesDiario = interesMensualNum / 30;
+    const pagoDiarioFijo = monto / dias + (monto * interesDiario);
+
     const prestamo = new Prestamo({
       clienteId,
       usuarioId: req.usuario.id,
@@ -28,7 +32,10 @@ export const crearPrestamo = async (req, res) => {
       interesMensual: interesMensualNum,
       fechaInicio,
       dias,
-      montoRecuperado: 0
+      diasTotales: dias,
+      pagoDiarioFijo: Number(pagoDiarioFijo.toFixed(2)),
+      montoRecuperado: 0,
+      cobradoHoy: false,
     });
 
     await prestamo.save();
@@ -47,15 +54,13 @@ export const listarCobrosHoy = async (req, res) => {
     const cobros = prestamos
       .map((p) => {
         const diaActual = hoy.diff(dayjs(p.fechaInicio), "day") + 1;
-        if (diaActual > 0 && diaActual <= p.dias) {
-          const interesDiario = (Number(p.interesMensual) || 0) / 30;
-          const pagoDiario = p.monto / p.dias + (p.monto * interesDiario);
+        if (diaActual > 0 && diaActual <= p.diasTotales) {
           return {
             cliente: p.clienteId.nombre,
             diaActual,
-            pagoDiario: Number(pagoDiario.toFixed(2)),
+            pagoDiario: p.pagoDiarioFijo, // pago diario fijo
             dineroRestante: Number((p.monto - p.montoRecuperado).toFixed(2)),
-            dineroRecuperado: Number(p.montoRecuperado.toFixed(2))
+            dineroRecuperado: Number(p.montoRecuperado.toFixed(2)),
           };
         }
         return null;
@@ -75,24 +80,21 @@ export const historialCobrosCliente = async (req, res) => {
     const prestamos = await Prestamo.find({ clienteId, usuarioId: req.usuario.id });
 
     const historial = prestamos.map((p) => {
-      const interesDiario = (Number(p.interesMensual) || 0) / 30;
-      const pagoDiario = p.monto / p.dias + (p.monto * interesDiario);
-
       const cobros = [];
-      for (let dia = 1; dia <= p.dias; dia++) {
+      for (let dia = 1; dia <= p.diasTotales; dia++) {
         cobros.push({
           dia,
-          monto: Number(pagoDiario.toFixed(2))
+          monto: p.pagoDiarioFijo,
         });
       }
 
       return {
         prestamoId: p._id,
         fechaInicio: p.fechaInicio,
-        dias: p.dias,
+        dias: p.diasTotales,
         cobros,
         dineroRecuperado: p.montoRecuperado,
-        dineroRestante: Number((p.monto - p.montoRecuperado).toFixed(2))
+        dineroRestante: Number((p.monto - p.montoRecuperado).toFixed(2)),
       };
     });
 
@@ -113,17 +115,14 @@ export async function getPrestamosByCliente(req, res) {
       const hoy = dayjs();
       const diasTranscurridos = hoy.diff(fechaInicio, "day");
 
-      const interesDiario = (p.interesMensual || 0) / 30;
-      const pagoDiario = p.monto / p.dias + (p.monto * interesDiario);
-
       return {
         ...p.toObject(),
         cobroHoy:
-          diasTranscurridos >= 0 && diasTranscurridos < p.dias
-            ? Number(pagoDiario.toFixed(2))
+          diasTranscurridos >= 0 && diasTranscurridos < p.diasTotales
+            ? p.pagoDiarioFijo
             : 0,
         dineroRecuperado: p.montoRecuperado,
-        dineroRestante: Number((p.monto - p.montoRecuperado).toFixed(2))
+        dineroRestante: Number((p.monto - p.montoRecuperado).toFixed(2)),
       };
     });
 
@@ -142,7 +141,18 @@ export const actualizarPrestamo = async (req, res) => {
       return res.status(404).json({ msg: "Préstamo no encontrado" });
     }
 
-    Object.assign(prestamo, req.body);
+    const { monto, interesMensual, fechaInicio, dias, cobradoHoy } = req.body;
+
+    if (monto !== undefined) prestamo.monto = monto;
+    if (interesMensual !== undefined) prestamo.interesMensual = interesMensual;
+    if (fechaInicio !== undefined) prestamo.fechaInicio = fechaInicio;
+    if (dias !== undefined) {
+      prestamo.dias = dias;
+      prestamo.diasTotales = dias;
+      // NO recalcular pagoDiarioFijo para que permanezca el original
+    }
+    if (cobradoHoy !== undefined) prestamo.cobradoHoy = cobradoHoy;
+
     await prestamo.save();
 
     res.json(prestamo);
@@ -164,7 +174,7 @@ export const eliminarPrestamo = async (req, res) => {
   }
 };
 
-// Nuevo: Abonar a préstamo
+// Abonar a préstamo
 export const abonarPrestamo = async (req, res) => {
   try {
     const { id } = req.params;
@@ -181,15 +191,13 @@ export const abonarPrestamo = async (req, res) => {
 
     prestamo.montoRecuperado += cantidad;
     if (prestamo.montoRecuperado > prestamo.monto) {
-      prestamo.montoRecuperado = prestamo.monto; // no pasar del total
+      prestamo.montoRecuperado = prestamo.monto;
     }
 
     await prestamo.save();
 
-    res.json({
-      msg: "Abono registrado",
-      prestamo
-    });
+    const prestamoActualizado = await Prestamo.findById(id);
+    res.json(prestamoActualizado);
   } catch (error) {
     res.status(500).json({ msg: "Error al abonar", error: error.message });
   }

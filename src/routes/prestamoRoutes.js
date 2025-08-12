@@ -6,7 +6,7 @@ import {
   getPrestamosByCliente,
   actualizarPrestamo,
   eliminarPrestamo,
-  abonarPrestamo // <-- nuevo controlador para abonos
+  abonarPrestamo,
 } from "../controllers/prestamoController.js";
 import { verificarToken } from "../middleware/authMiddleware.js";
 
