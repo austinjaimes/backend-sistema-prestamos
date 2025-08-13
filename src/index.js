@@ -6,7 +6,6 @@ import authRoutes from "./routes/authRoutes.js";
 import testRoutes from "./routes/testRoutes.js";
 import clienteRoutes from "./routes/clienteRoutes.js";
 import prestamoRoutes from "./routes/prestamoRoutes.js";
-import '../cronResetCobradoHoy.js';
 
 dotenv.config();
 
