@@ -18,8 +18,8 @@ const moverPrestamoATerminado = async (prestamo) => {
     montoFinal: prestamo.montoFinal,
     interesMensual: prestamo.interesMensual,
     fechaInicio: prestamo.fechaInicio,
-    fechaTerminacion: dayjs().tz().toDate(),
-    dias: prestamo.diasTotales, // mantener estático
+    fechaTerminacion: prestamo.fechaTerminacion || dayjs().tz().toDate(),
+    dias: prestamo.diasTotales,
     diasTotales: prestamo.diasTotales,
     pagoDiarioFijo: prestamo.pagoDiarioFijo,
     montoRecuperado: prestamo.montoRecuperado,
@@ -43,7 +43,7 @@ export const crearPrestamo = async (req, res) => {
 
     let interesMensualNum = Number(interesMensual);
     if (isNaN(interesMensualNum)) return res.status(400).json({ msg: "Interés mensual inválido" });
-    interesMensualNum = interesMensualNum / 100; // Convertir porcentaje a decimal
+    interesMensualNum = interesMensualNum / 100;
 
     if (!monto || monto <= 0) return res.status(400).json({ msg: "Monto inválido" });
     if (!fechaInicio) return res.status(400).json({ msg: "Fecha de inicio requerida" });
@@ -53,7 +53,7 @@ export const crearPrestamo = async (req, res) => {
     const pagoDiarioFijo = montoFinal / dias;
 
     const fechaInicioLocal = dayjs.tz(fechaInicio).startOf("day").toDate();
-    const fechaTerminacion = dayjs(fechaInicioLocal).add(dias, "day").toDate(); // <-- Calculamos automáticamente
+    const fechaTerminacion = dayjs(fechaInicioLocal).add(dias, "day").toDate();
 
     const historialPagos = new Array(dias).fill(null).map(() => ({
       pagado: false,
@@ -68,7 +68,7 @@ export const crearPrestamo = async (req, res) => {
       montoFinal: Number(montoFinal.toFixed(2)),
       interesMensual: interesMensualNum,
       fechaInicio: fechaInicioLocal,
-      fechaTerminacion, // <-- Asignamos la fecha de terminación
+      fechaTerminacion,
       dias,
       diasTotales: dias,
       pagoDiarioFijo: Number(pagoDiarioFijo.toFixed(2)),
@@ -83,7 +83,6 @@ export const crearPrestamo = async (req, res) => {
     res.status(500).json({ msg: "Error al crear préstamo", error: error.message });
   }
 };
-
 
 // Obtener préstamo con historial completo
 export const getPrestamoConHistorial = async (req, res) => {
@@ -188,6 +187,11 @@ export const abonarPrestamo = async (req, res) => {
       ? prestamo.historialPagos[diaIndex]?.pagado || false
       : false;
 
+    // Asegurarse de que fechaTerminacion exista antes de guardar
+    if (!prestamo.fechaTerminacion) {
+      prestamo.fechaTerminacion = dayjs(prestamo.fechaInicio).add(prestamo.diasTotales, "day").toDate();
+    }
+
     if (prestamo.montoRecuperado >= prestamo.montoFinal) {
       const prestamoTerminado = await moverPrestamoATerminado(prestamo);
       return res.json(prestamoTerminado);
@@ -201,7 +205,6 @@ export const abonarPrestamo = async (req, res) => {
 };
 
 // Editar préstamo
-// Editar préstamo
 export const actualizarPrestamo = async (req, res) => {
   try {
     const { id } = req.params;
@@ -210,7 +213,6 @@ export const actualizarPrestamo = async (req, res) => {
     const prestamo = await Prestamo.findOne({ _id: id, usuarioId: req.usuario.id });
     if (!prestamo) return res.status(404).json({ msg: "Préstamo no encontrado" });
 
-    // Actualizar días
     if (dias !== undefined && !isNaN(dias) && dias > 0) {
       prestamo.diasTotales = Number(dias);
       const historialPrevio = prestamo.historialPagos || [];
@@ -224,7 +226,7 @@ export const actualizarPrestamo = async (req, res) => {
     if (interesMensual !== undefined) {
       let interesNum = Number(interesMensual);
       if (isNaN(interesNum)) return res.status(400).json({ msg: "Interés mensual inválido" });
-      prestamo.interesMensual = interesNum / 100; // <-- Convertir a decimal
+      prestamo.interesMensual = interesNum / 100;
     }
 
     prestamo.fechaInicio = fechaInicio !== undefined
@@ -235,6 +237,9 @@ export const actualizarPrestamo = async (req, res) => {
 
     prestamo.montoFinal = prestamo.monto + prestamo.monto * prestamo.interesMensual;
     prestamo.pagoDiarioFijo = prestamo.montoFinal / prestamo.diasTotales;
+
+    // Asegurar que fechaTerminacion se mantenga
+    prestamo.fechaTerminacion = dayjs(prestamo.fechaInicio).add(prestamo.diasTotales, "day").toDate();
 
     await prestamo.save();
     res.json(prestamo);

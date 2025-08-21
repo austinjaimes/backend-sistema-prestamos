@@ -20,8 +20,12 @@ export const prestamosPorVencer = async (req, res) => {
 
     const terminanHoy = [];
     const terminanSemana = [];
+    const retrasosPorCliente = {}; // { clienteId: { nombre, retrasos, montoAtrasado } }
 
     prestamos.forEach((p) => {
+      // validar que clienteId exista
+      if (!p.clienteId) return;
+
       // calcular fecha de terminación automáticamente
       const fechaTerminacion = dayjs(p.fechaInicio).add(p.dias, "day").startOf("day");
 
@@ -38,11 +42,35 @@ export const prestamosPorVencer = async (req, res) => {
       } else if (fechaTerminacion.isAfter(hoy) && fechaTerminacion.isBefore(finSemana.add(1, "day"))) {
         terminanSemana.push(prestamoConFecha);
       }
+
+      // calcular retrasos solo hasta el día actual
+      const diasTranscurridos = Math.min(
+        hoy.diff(dayjs(p.fechaInicio).tz().startOf("day"), "day"),
+        p.diasTotales
+      );
+
+      const retrasos = p.historialPagos
+        .slice(0, diasTranscurridos) // solo considerar días que ya pasaron
+        .filter(h => !h.pagado).length;
+
+      if (retrasos > 0) {
+        const clienteIdStr = p.clienteId._id.toString();
+        if (!retrasosPorCliente[clienteIdStr]) {
+          retrasosPorCliente[clienteIdStr] = {
+            nombre: p.clienteId.nombre,
+            retrasos: 0,
+            montoAtrasado: 0,
+          };
+        }
+        retrasosPorCliente[clienteIdStr].retrasos += retrasos;
+        retrasosPorCliente[clienteIdStr].montoAtrasado += retrasos * p.pagoDiarioFijo;
+      }
     });
 
     res.json({
       terminanHoy,
       terminanSemana,
+      clientesRetrasados: Object.values(retrasosPorCliente).sort((a, b) => b.retrasos - a.retrasos),
     });
   } catch (error) {
     res.status(500).json({
