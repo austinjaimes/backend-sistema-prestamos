@@ -18,6 +18,9 @@ const PrestamoSchema = new mongoose.Schema({
   cobradoHoy: { type: Boolean, default: false },
   montoRecuperado: { type: Number, default: 0 },
 
+  // Nueva propiedad: fecha en que termina el préstamo
+  fechaTerminacion: { type: Date, required: true },
+
   // historialPagos ahora es array de objetos para guardar más info, no solo booleanos
   historialPagos: {
     type: [
@@ -39,5 +42,15 @@ PrestamoSchema.virtual("dineroRestante").get(function () {
 PrestamoSchema.set("toJSON", { virtuals: true });
 PrestamoSchema.set("toObject", { virtuals: true });
 
-// Evitar OverwriteModelError:
+// Middleware para calcular automáticamente la fechaTerminacion
+PrestamoSchema.pre("save", function (next) {
+  if (this.fechaInicio && this.dias && !this.fechaTerminacion) {
+    const fecha = new Date(this.fechaInicio);
+    fecha.setDate(fecha.getDate() + this.dias);
+    this.fechaTerminacion = fecha;
+  }
+  next();
+});
+
+// Evitar OverwriteModelError
 export default mongoose.models.Prestamo || mongoose.model("Prestamo", PrestamoSchema);
